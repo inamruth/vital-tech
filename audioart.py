@@ -4,15 +4,15 @@ import torch
 import gc
 import whisper
 from diffusers import StableDiffusionXLPipeline
-
 # ---- Optimize Memory ----
 torch.cuda.empty_cache()
 gc.collect()
 
 # ---- Force CPU Mode ----
-device = "cpu"  # Force CPU to fix the dtype issue
+device = "cuda" if torch.cuda.is_available() else "cpu"
+torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+# Force CPU to fix the dtype issue
 print(f"Using device: {device}")
-
 # ---- Load Whisper for Speech-to-Text ----
 try:
     whisper_model = whisper.load_model("base")
@@ -26,7 +26,7 @@ try:
     # Use float32 for CPU compatibility instead of float16
     pipe = StableDiffusionXLPipeline.from_pretrained(
         "segmind/SSD-1B",
-        torch_dtype=torch.float32,  # Changed from float16 to float32 for CPU
+        torch_dtype= torch_dtype,  # Changed from float16 to float32 for CPU
         use_safetensors=True,
         low_cpu_mem_usage=True
     )
@@ -34,35 +34,31 @@ try:
     print("Stable Diffusion model loaded successfully")
 except Exception as e:
     print(f"Error loading Stable Diffusion model: {e}")
-
 # ---- Dropdown Options ----
-image_style_options = ["Sci-fi", "Photorealistic", "Low Poly", "Cinematic", "Cartoon", "Graffiti", "Sketching"]
-image_quality_options = ["High Resolution", "Clear", "Detailed", "Beautiful", "Realistic"]
-render_options = ["Pixar", "Octane", "Unreal Engine", "Unity"]
-angle_options = ["Wide-Angle", "Front View", "Top View", "Side View"]
-lighting_options = ["Soft", "Ambient", "Neon", "Natural", "Dramatic"]
-background_options = ["Outdoor", "Indoor", "Space", "Nature", "Abstract"]
-device_options = ["Camera", "Professional Camera", "Smartphone", "Film Camera"]
-emotion_options = ["Happy", "Sad", "Mysterious", "Neutral", "Dreamy"]
+image_style_options = ["Sci-fi", "photorealistic", "low poly", "cinematic", "cartoon", "graffiti", "sketching"]
+image_quality_options = ["High resolution", "8K", "clear", "heavy detailed", "beautiful", "realistic+++", "hyper detailed", "masterpiece"]
+render_options = ["Pixar","Octane", "real-time ray tracing", "Christopher Nolan", "James Cameron", "unreal engine", "unity" ]
+angle_options = ["Wide-angle lens", "full shot", "Top angle", "Telephoto lens", "Prime lens", "Zoom lens", "Macro lens", "Fisheye lens", "Tilt-shift lens", "Portrait lens", "Anamorphic lens", "Cinematic lens", "Fixed focal length lens", "Variable focal length lens"]
+lighting_options = ["Soft", "ambient", "ring light", "neon", "Natural", "Harsh", "Dramatic", "Backlit", "Studio"]
+background_options = ["outdoor", "indoor", "space", "nature", "sci-fi", "neon", "abstract"]
+device_options = ["Go Pro", "Iphone 15", "Canon EOS R5","Nikon Z7", "Sony F950", "Drone", "CCTV"]
+emotion_options = ["Happy", "Sad", "Angry", "Mysterious", "Surprised", "Annoyed", "Neutral", "dreamy", "nostalgic"]
 
 # ---- Function to Process Audio and Generate Image ----
 def process_audio(audio_file, image_style, image_quality, render, angle, lighting, background, device_type, emotion):
     if audio_file is None:
-        return "Please record or upload audio first.", None
-
+        return "Please record or upload audio first.", None, "settings"
+    
     try:
-        # ---- Convert Speech to Text ----
         print(f"Processing audio file: {audio_file}")
         result = whisper_model.transcribe(audio_file)
         text_prompt = result["text"]
         print(f"Transcribed text: {text_prompt}")
 
-        # ---- Generate Image ----
-        full_prompt = f"{text_prompt} in {image_style} style, {image_quality}, {render} render, {angle} angle, {lighting} lighting, {emotion} mood, {background} background, shot on {device_type}"
-        neg_prompt = "ugly, blurry, poor quality, deformed, bad lighting, noisy"
-
+        full_prompt = f"A stunning {image_style}, {image_quality} shot of {text_prompt} captured in {device_type} using {angle} and rendered by {render}, illuminated by {lighting} light, with {emotion} emotions in a {background} background setting."
+        neg_prompt = "ugly, blurry, poor quality, deformed structure, very bad lighting, bad colouring, noise"
         print(f"Generating image with prompt: {full_prompt}")
-        # Don't use autocast with CPU
+
         output = pipe(
             prompt=full_prompt,
             negative_prompt=neg_prompt,
@@ -73,45 +69,53 @@ def process_audio(audio_file, image_style, image_quality, render, angle, lightin
 
         image = output.images[0]
         print("Image generated successfully")
-        return text_prompt, image
+        return text_prompt, image,"results"
 
     except Exception as e:
         print(f"Error in process_audio: {e}")
-        return f"Error processing: {str(e)}", None
+        return f"Error processing: {str(e)}", None,"settings"
 
-# ---- Gradio UI ----
-with gr.Blocks() as demo:
+# ---- Gradio UI with Tabs ----
+with gr.Blocks(css="""
+    body { background: url('https://source.unsplash.com/random/1920x1080/?art'); background-size: cover; }
+    .input-page { background: url('https://source.unsplash.com/random/1920x1080/?abstract'); background-size: cover; padding: 20px; }
+    .settings-page { background: url('https://source.unsplash.com/random/1920x1080/?design'); background-size: cover; padding: 20px; }
+""") as demo:
     gr.Markdown("# 🎨 Audio2Art")
-
-    with gr.Row():
-        audio_input = gr.Audio(type="filepath", label="🎤 Record Your Voice")
-
-    with gr.Row():
-        style = gr.Dropdown(choices=image_style_options, label="🎨 Image Style", value="Photorealistic")
-        quality = gr.Dropdown(choices=image_quality_options, label="🖼 Quality", value="High Resolution")
-
-    with gr.Row():
+    
+    page_state = gr.State("input")
+    
+    with gr.Column(visible=True, elem_classes=["input-page"]) as input_page:
+        audio_input = gr.Audio(type="filepath", label="🎤 Record Your Voice or Upload Audio")
+        next_button = gr.Button("Next →")
+    
+    with gr.Column(visible=False, elem_classes=["settings-page"]) as settings_page:
+        back_to_input = gr.Button("← Back to Input")
+        style = gr.Dropdown(choices=image_style_options, label="🎨 Image Style", value="Sci-fi")
+        quality = gr.Dropdown(choices=image_quality_options, label="🖼 Quality", value="High resolution")
         render = gr.Dropdown(choices=render_options, label="🖥 Render Engine", value="Pixar")
-        angle = gr.Dropdown(choices=angle_options, label="📷 Camera Angle", value="Front View")
-
-    with gr.Row():
+        angle = gr.Dropdown(choices=angle_options, label="📷 Camera Angle", value="Wide-angle lens")
         lighting = gr.Dropdown(choices=lighting_options, label="💡 Lighting", value="Soft")
-        background = gr.Dropdown(choices=background_options, label="🌆 Background", value="Outdoor")
-
-    with gr.Row():
-        device_type = gr.Dropdown(choices=device_options, label="📸 Device", value="Professional Camera")
+        background = gr.Dropdown(choices=background_options, label="🌆 Background", value="outdoor")
+        device_type = gr.Dropdown(choices=device_options, label="📸 Device", value="Go Pro")
         emotion = gr.Dropdown(choices=emotion_options, label="😃 Emotion", value="Happy")
+        generate_button = gr.Button("🚀 Generate Image")
+    
+    with gr.Column(visible=False) as results_page:
+        output_text = gr.Textbox(label="📝 Transcribed Text")
+        output_image = gr.Image(label="🖼 Generated Image")
+        back_to_settings = gr.Button("← Back to Settings")
+    
+    def update_page(page):
+        return (
+            gr.update(visible=page == "input"),
+            gr.update(visible=page == "settings"),
+            gr.update(visible=page == "results"),
+        )
+    
+    next_button.click(lambda: "settings", outputs=page_state).then(update_page, inputs=page_state, outputs=[input_page, settings_page, results_page])
+    back_to_input.click(lambda: "input", outputs=page_state).then(update_page, inputs=page_state, outputs=[input_page, settings_page, results_page])
+    generate_button.click(process_audio, inputs=[audio_input, style, quality, render, angle, lighting, background, device_type, emotion], outputs=[output_text, output_image, page_state]).then(update_page, inputs=page_state, outputs=[input_page, settings_page, results_page])
+    back_to_settings.click(lambda: "settings", outputs=page_state).then(update_page, inputs=page_state, outputs=[input_page, settings_page, results_page])
 
-    generate_button = gr.Button("🚀 Generate Image")
-
-    output_text = gr.Textbox(label="📝 Transcribed Text")
-    output_image = gr.Image(label="🖼 Generated Image")
-
-    generate_button.click(
-        process_audio,
-        inputs=[audio_input, style, quality, render, angle, lighting, background, device_type, emotion],
-        outputs=[output_text, output_image]
-    )
-
-# Launch with debug information
 demo.launch(share=True, debug=True)
