@@ -1,179 +1,117 @@
-!pip install gradio diffusers hugchat transformers accelerate safetensors --upgrade -q
-!pip install git+https://github.com/huggingface/diffusers -q
-!pip install ipywidgets -q
-!pip install invisible_watermark -q
-
-from transformers import pipeline
-from ipywidgets import interactive, widgets
-from IPython.display import HTML, Javascript, Image, display
-from google.colab.output import eval_js
-import base64
-from diffusers import StableDiffusionXLPipeline
+!pip install gradio diffusers transformers accelerate torch safetensors openai-whisper -q
+import gradio as gr
 import torch
 import gc
+import whisper
+from diffusers import StableDiffusionXLPipeline
 
-# Add memory optimization settings
+# ---- Optimize Memory ----
 torch.cuda.empty_cache()
 gc.collect()
 
-# Set PyTorch memory allocation settings
-import os
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+# ---- Force CPU Mode ----
+device = "cpu"  # Force CPU to fix the dtype issue
+print(f"Using device: {device}")
 
-# Use a smaller model with lower memory requirements
-pipe = StableDiffusionXLPipeline.from_pretrained(
-    "segmind/SSD-1B", 
-    torch_dtype=torch.float16,
-    use_safetensors=True,
-    variant="fp16",
-    # Enable sequential CPU offloading to save memory
-    low_cpu_mem_usage=True
-)
+# ---- Load Whisper for Speech-to-Text ----
+try:
+    whisper_model = whisper.load_model("base")
+    whisper_model = whisper_model.to(device)
+    print("Whisper model loaded successfully")
+except Exception as e:
+    print(f"Error loading Whisper model: {e}")
 
-# Enable memory-efficient attention mechanism
-pipe.enable_attention_slicing(1)
+# ---- Load Stable Diffusion XL Model ----
+try:
+    # Use float32 for CPU compatibility instead of float16
+    pipe = StableDiffusionXLPipeline.from_pretrained(
+        "segmind/SSD-1B",
+        torch_dtype=torch.float32,  # Changed from float16 to float32 for CPU
+        use_safetensors=True,
+        low_cpu_mem_usage=True
+    )
+    pipe = pipe.to(device)
+    print("Stable Diffusion model loaded successfully")
+except Exception as e:
+    print(f"Error loading Stable Diffusion model: {e}")
 
-# Move to CUDA with more memory-efficient settings
-pipe = pipe.to("cuda")
+# ---- Dropdown Options ----
+image_style_options = ["Sci-fi", "Photorealistic", "Low Poly", "Cinematic", "Cartoon", "Graffiti", "Sketching"]
+image_quality_options = ["High Resolution", "Clear", "Detailed", "Beautiful", "Realistic"]
+render_options = ["Pixar", "Octane", "Unreal Engine", "Unity"]
+angle_options = ["Wide-Angle", "Front View", "Top View", "Side View"]
+lighting_options = ["Soft", "Ambient", "Neon", "Natural", "Dramatic"]
+background_options = ["Outdoor", "Indoor", "Space", "Nature", "Abstract"]
+device_options = ["Camera", "Professional Camera", "Smartphone", "Film Camera"]
+emotion_options = ["Happy", "Sad", "Mysterious", "Neutral", "Dreamy"]
 
-# For whisper, select a smaller model if possible to save memory
-whisper = pipeline(
-    "automatic-speech-recognition", 
-    model="openai/whisper-base",  # Using smaller whisper model
-    chunk_length_s=30, 
-    device="cuda:0"
-)
+# ---- Function to Process Audio and Generate Image ----
+def process_audio(audio_file, image_style, image_quality, render, angle, lighting, background, device_type, emotion):
+    if audio_file is None:
+        return "Please record or upload audio first.", None
 
-js = Javascript(
-    """
-    async function recordAudio() {
-      const div = document.createElement('div');
-      const audio = document.createElement('audio');
-      const strtButton = document.createElement('button');
-      const stopButton = document.createElement('button');
+    try:
+        # ---- Convert Speech to Text ----
+        print(f"Processing audio file: {audio_file}")
+        result = whisper_model.transcribe(audio_file)
+        text_prompt = result["text"]
+        print(f"Transcribed text: {text_prompt}")
 
-      strtButton.textContent = 'Start Recording';
-      stopButton.textContent = 'Stop Recording';
+        # ---- Generate Image ----
+        full_prompt = f"{text_prompt} in {image_style} style, {image_quality}, {render} render, {angle} angle, {lighting} lighting, {emotion} mood, {background} background, shot on {device_type}"
+        neg_prompt = "ugly, blurry, poor quality, deformed, bad lighting, noisy"
 
-      document.body.appendChild(div);
-      div.appendChild(strtButton);
-      div.appendChild(audio);
-
-      const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-      let recorder = new MediaRecorder(stream);
-
-      audio.style.display = 'block';
-      audio.srcObject = stream;
-      audio.controls = true;
-      audio.muted = true;
-
-      await new Promise((resolve) => strtButton.onclick = resolve);
-        strtButton.replaceWith(stopButton);
-        recorder.start();
-
-      await new Promise((resolve) => stopButton.onclick = resolve);
-        recorder.stop();
-        let recData = await new Promise((resolve) => recorder.ondataavailable = resolve);
-        let arrBuff = await recData.data.arrayBuffer();
-        stream.getAudioTracks()[0].stop();
-        div.remove()
-
-        let binaryString = '';
-        let bytes = new Uint8Array(arrBuff);
-        bytes.forEach((byte) => { binaryString += String.fromCharCode(byte)});
-
-      const url = URL.createObjectURL(recData.data);
-      const player = document.createElement('audio');
-      player.controls = true;
-      player.src = url;
-      document.body.appendChild(player);
-
-    return btoa(binaryString)
-
-          };
-          """
-)
-
-display(js)
-
-output = eval_js('recordAudio({})')
-with open('audio.wav', 'wb') as file:
-    binary = base64.b64decode(output)
-    file.write(binary)
-print('Recording saved to:', file.name)
-speech_to_text = whisper("audio.wav")
-
-img = speech_to_text['text']
-print(img)
-
-generated_image = None
-image_display = display("", display_id=True)
-
-def generate_image(button):
-    global generated_image
-    
-    # Clear memory before generating
-    torch.cuda.empty_cache()
-    gc.collect()
-
-    image_style = style_dropdown.value
-    image_quality = quality_dropdown.value
-    render = render_dropdown.value
-    angle = angle_dropdown.value
-    lighting = lighting_dropdown.value
-    background = background_dropdown.value
-    device = device_dropdown.value
-    emotion = emotion_dropdown.value
-
-    # Use a simpler prompt structure to reduce complexity
-    prompt = f"{img} in {image_style} style, {image_quality}, {render} render, {lighting} lighting, {emotion} mood, {background} background"
-
-    neg_prompt = "ugly, blurry, poor quality, deformed, bad lighting, noisy"
-    
-    # Use smaller image sizes to reduce memory usage
-    with torch.autocast("cuda"):
+        print(f"Generating image with prompt: {full_prompt}")
+        # Don't use autocast with CPU
         output = pipe(
-            prompt=prompt, 
+            prompt=full_prompt,
             negative_prompt=neg_prompt,
-            height=512,  # Reduced from default 1024
-            width=512,   # Reduced from default 1024
-            num_inference_steps=20  # Reduced steps
+            height=512,
+            width=512,
+            num_inference_steps=20
         )
-    
-    generated_image = output.images[0]
-    generated_image.save("generated_image.png")
-    final_image_path = "generated_image.png"
-    image_display.update(Image(filename=final_image_path))
-    
-    # Clean up after generation
-    torch.cuda.empty_cache()
-    gc.collect()
 
-image_style_options = ["Sci-fi", "photorealistic", "low poly", "cinematic", "cartoon", "graffiti", "sketching"]
-image_quality_options = ["High resolution", "clear", "detailed", "beautiful", "realistic"]
-render_options = ["Pixar", "Octane", "Unreal engine", "Unity"]
-angle_options = ["Wide-angle", "front view", "Top view", "Side view"]
-lighting_options = ["Soft", "ambient", "neon", "Natural", "Dramatic"]
-background_options = ["outdoor", "indoor", "space", "nature", "abstract"]
-device_options = ["camera", "professional camera", "smartphone", "film camera"]
-emotion_options = ["Happy", "Sad", "Mysterious", "Neutral", "dreamy"]
+        image = output.images[0]
+        print("Image generated successfully")
+        return text_prompt, image
 
-style_dropdown = widgets.Dropdown(options=image_style_options, description="Style:")
-quality_dropdown = widgets.Dropdown(options=image_quality_options, description="Quality:")
-render_dropdown = widgets.Dropdown(options=render_options, description="Render by:")
-angle_dropdown = widgets.Dropdown(options=angle_options, description="Angle:")
-lighting_dropdown = widgets.Dropdown(options=lighting_options, description="Lighting:")
-background_dropdown = widgets.Dropdown(options=background_options, description="Background:")
-device_dropdown = widgets.Dropdown(options=device_options, description="Device:")
-emotion_dropdown = widgets.Dropdown(options=emotion_options, description="Emotion:")
+    except Exception as e:
+        print(f"Error in process_audio: {e}")
+        return f"Error processing: {str(e)}", None
 
-generate_button = widgets.Button(description="Generate Image")
-generate_button.on_click(generate_image)
+# ---- Gradio UI ----
+with gr.Blocks() as demo:
+    gr.Markdown("# 🎨 Audio2Art")
 
-interactive_widget = widgets.VBox([
-    style_dropdown, quality_dropdown, angle_dropdown, render_dropdown,
-    lighting_dropdown, background_dropdown, device_dropdown, emotion_dropdown,
-    generate_button
-])
+    with gr.Row():
+        audio_input = gr.Audio(type="filepath", label="🎤 Record Your Voice")
 
-display(interactive_widget)
+    with gr.Row():
+        style = gr.Dropdown(choices=image_style_options, label="🎨 Image Style", value="Photorealistic")
+        quality = gr.Dropdown(choices=image_quality_options, label="🖼 Quality", value="High Resolution")
+
+    with gr.Row():
+        render = gr.Dropdown(choices=render_options, label="🖥 Render Engine", value="Pixar")
+        angle = gr.Dropdown(choices=angle_options, label="📷 Camera Angle", value="Front View")
+
+    with gr.Row():
+        lighting = gr.Dropdown(choices=lighting_options, label="💡 Lighting", value="Soft")
+        background = gr.Dropdown(choices=background_options, label="🌆 Background", value="Outdoor")
+
+    with gr.Row():
+        device_type = gr.Dropdown(choices=device_options, label="📸 Device", value="Professional Camera")
+        emotion = gr.Dropdown(choices=emotion_options, label="😃 Emotion", value="Happy")
+
+    generate_button = gr.Button("🚀 Generate Image")
+
+    output_text = gr.Textbox(label="📝 Transcribed Text")
+    output_image = gr.Image(label="🖼 Generated Image")
+
+    generate_button.click(
+        process_audio,
+        inputs=[audio_input, style, quality, render, angle, lighting, background, device_type, emotion],
+        outputs=[output_text, output_image]
+    )
+
+# Launch with debug information
+demo.launch(share=True, debug=True)
