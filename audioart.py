@@ -4,7 +4,6 @@ import torch
 import gc
 import whisper
 from diffusers import StableDiffusionXLPipeline
-# ---- Optimize Memory ----
 torch.cuda.empty_cache()
 gc.collect()
 
@@ -13,7 +12,6 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 # Force CPU to fix the dtype issue
 print(f"Using device: {device}")
-# ---- Load Whisper for Speech-to-Text ----
 try:
     whisper_model = whisper.load_model("base")
     whisper_model = whisper_model.to(device)
@@ -34,7 +32,6 @@ try:
     print("Stable Diffusion model loaded successfully")
 except Exception as e:
     print(f"Error loading Stable Diffusion model: {e}")
-# ---- Dropdown Options ----
 image_style_options = ["Sci-fi", "photorealistic", "low poly", "cinematic", "cartoon", "graffiti", "sketching"]
 image_quality_options = ["High resolution", "Crystal clear", "heavy detailed", "Sharp & vibrant", "hyper detailed", "Cinematic masterpiece"]
 render_options = ["Octane", "RenderMan", "V-Ray", "Cycles", "Eevee", "Redshift", "Corona", "Unreal Engine", "Unity HDRP"]
@@ -77,9 +74,13 @@ def process_audio(audio_file, image_style, image_quality, render, angle, lightin
 
 # ---- Gradio UI with Tabs ----
 with gr.Blocks(css="""
-    body { background: url('https://source.unsplash.com/random/1920x1080/?art'); background-size: cover; }
-    .input-page { background: url('https://source.unsplash.com/random/1920x1080/?abstract'); background-size: cover; padding: 20px; }
+    body,.gradio-container {
+        background: url('https://i.pinimg.com/originals/d6/e1/27/d6e12796914cde798323225515bd7868.gif') no-repeat center center fixed;
+        background-size: cover;
+    }
+    .input-page { background: url('https://i.pinimg.com/originals/d6/e1/27/d6e12796914cde798323225515bd7868.gif'); background-size: cover; padding: 20px; }
     .settings-page { background: url('https://source.unsplash.com/random/1920x1080/?design'); background-size: cover; padding: 20px; }
+}
 """) as demo:
     gr.Markdown("# 🎨 Audio2Art")
     
@@ -93,10 +94,10 @@ with gr.Blocks(css="""
         back_to_input = gr.Button("← Back to Input")
         style = gr.Dropdown(choices=image_style_options, label="🎨 Image Style", value="Sci-fi")
         quality = gr.Dropdown(choices=image_quality_options, label="🖼 Quality", value="High resolution")
-        render = gr.Dropdown(choices=render_options, label="🖥 Render Engine", value="Pixar")
-        angle = gr.Dropdown(choices=angle_options, label="📷 Camera Angle", value="Wide-angle lens")
+        render = gr.Dropdown(choices=render_options, label="🖥 Render Engine")
+        angle = gr.Dropdown(choices=angle_options, label="📷 Camera Angle")
         lighting = gr.Dropdown(choices=lighting_options, label="💡 Lighting", value="Soft")
-        background = gr.Dropdown(choices=background_options, label="🌆 Background", value="outdoor")
+        background = gr.Dropdown(choices=background_options, label="🌆 Background")
         device_type = gr.Dropdown(choices=device_options, label="📸 Device", value="Go Pro")
         emotion = gr.Dropdown(choices=emotion_options, label="😃 Emotion", value="Happy")
         generate_button = gr.Button("🚀 Generate Image")
