@@ -36,12 +36,12 @@ except Exception as e:
     print(f"Error loading Stable Diffusion model: {e}")
 # ---- Dropdown Options ----
 image_style_options = ["Sci-fi", "photorealistic", "low poly", "cinematic", "cartoon", "graffiti", "sketching"]
-image_quality_options = ["High resolution", "8K", "clear", "heavy detailed", "beautiful", "realistic+++", "hyper detailed", "masterpiece"]
-render_options = ["Pixar","Octane", "real-time ray tracing", "Christopher Nolan", "James Cameron", "unreal engine", "unity" ]
-angle_options = ["Wide-angle lens", "full shot", "Top angle", "Telephoto lens", "Prime lens", "Zoom lens", "Macro lens", "Fisheye lens", "Tilt-shift lens", "Portrait lens", "Anamorphic lens", "Cinematic lens", "Fixed focal length lens", "Variable focal length lens"]
+image_quality_options = ["High resolution", "Crystal clear", "heavy detailed", "Sharp & vibrant", "hyper detailed", "Cinematic masterpiece"]
+render_options = ["Octane", "RenderMan", "V-Ray", "Cycles", "Eevee", "Redshift", "Corona", "Unreal Engine", "Unity HDRP"]
+angle_options = ["Wide-angle shot", "Full shot", "Top-down view", "Extreme close-up","Telephoto zoom","Portrait framing", "Anamorphic widescreen", "Cinematic composition", "Dynamic action shot"]
 lighting_options = ["Soft", "ambient", "ring light", "neon", "Natural", "Harsh", "Dramatic", "Backlit", "Studio"]
-background_options = ["outdoor", "indoor", "space", "nature", "sci-fi", "neon", "abstract"]
-device_options = ["Go Pro", "Iphone 15", "Canon EOS R5","Nikon Z7", "Sony F950", "Drone", "CCTV"]
+background_options = [ "Futuristic city", "Cyberpunk streets", "Alien planet", "Deep space", "Sky with clouds","Indoor futuristic lab", "Grand hall", "Neon-lit alley"]
+device_options = ["Go Pro", "Iphone 15", "Canon EOS R5","Nikon Z7", "Sony F950", "Drone"]
 emotion_options = ["Happy", "Sad", "Angry", "Mysterious", "Surprised", "Annoyed", "Neutral", "dreamy", "nostalgic"]
 
 # ---- Function to Process Audio and Generate Image ----
