@@ -30,7 +30,7 @@ Alternatively, you can run this on **Google Colab** by setting up the environmen
 Run the application with:
 
 ```bash
-python your_script.py
+python audioart.py
 ```
 
 ### Running on Google Colab
@@ -40,7 +40,7 @@ To run on Google Colab:
 3. Execute the script in a code cell:
 
 ```python
-!python your_script.py
+!python audioart.py
 ```
 
 It will launch a Gradio interface where you can:
