@@ -35,10 +35,9 @@ python audioart.py
 
 ### Running on Google Colab
 To run on Google Colab:
-1. Upload your script to Colab.
-2. Run the installation command.
-3. Execute the script in a code cell:
-
+1. Upload your script (e.g., audioart.py) to Colab.
+2. Install any required dependencies using a code cell.
+3. Run the script using the following command in a code cell:
 ```python
 !python audioart.py
 ```
